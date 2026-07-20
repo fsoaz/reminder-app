@@ -68,7 +68,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadTrials() {
         CoroutineScope(Dispatchers.IO).launch {
-            val trials = database.trialDao().getAllTrials()
+            val trials = database.trialDao().getAllTrialsList()
             withContext(Dispatchers.Main) {
                 adapter = TrialAdapter(trials, this@MainActivity)
                 recyclerView.adapter = adapter
