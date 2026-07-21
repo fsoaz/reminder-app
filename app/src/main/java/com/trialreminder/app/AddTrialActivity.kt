@@ -1,23 +1,31 @@
 package com.trialreminder.app
 
-import android.app.AlarmManager
 import android.app.DatePickerDialog
-import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.widget.*
+import android.provider.Settings
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.trialreminder.app.data.TrialDatabase
 import com.trialreminder.app.model.Trial
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.*
+import kotlinx.coroutines.withContext
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
 
 class AddTrialActivity : AppCompatActivity() {
 
+    private lateinit var textViewTitle: TextView
     private lateinit var editTextName: EditText
     private lateinit var editTextDescription: EditText
     private lateinit var buttonSelectDate: Button
@@ -25,6 +33,7 @@ class AddTrialActivity : AppCompatActivity() {
     private lateinit var spinnerReminderTime: Spinner
     private lateinit var database: TrialDatabase
 
+    private var editingTrialId: Int = NO_TRIAL_ID
     private var selectedDate: Long = 0
     private val calendar = Calendar.getInstance()
 
@@ -32,39 +41,73 @@ class AddTrialActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_add_trial)
 
-        // Initialize views
+        textViewTitle = findViewById(R.id.textViewTitle)
         editTextName = findViewById(R.id.editTextName)
         editTextDescription = findViewById(R.id.editTextDescription)
         buttonSelectDate = findViewById(R.id.buttonSelectDate)
         buttonSetReminder = findViewById(R.id.buttonSetReminder)
         spinnerReminderTime = findViewById(R.id.spinnerReminderTime)
 
-        // Setup spinner with reminder time options
-        val reminderOptions = arrayOf("1 day before", "3 days before", "7 days before", "On the day")
+        val reminderOptions = resources.getStringArray(R.array.reminder_options)
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, reminderOptions)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerReminderTime.adapter = adapter
 
         database = TrialDatabase.getDatabase(this)
+        editingTrialId = intent.getIntExtra(EXTRA_TRIAL_ID, NO_TRIAL_ID)
 
-        // Date picker
+        if (isEditMode) {
+            textViewTitle.setText(R.string.edit_trial)
+            buttonSetReminder.setText(R.string.update_reminder)
+            loadTrialForEdit(editingTrialId)
+        } else {
+            textViewTitle.setText(R.string.add_new_trial)
+            buttonSetReminder.setText(R.string.set_reminder)
+        }
+
         buttonSelectDate.setOnClickListener {
             showDatePicker()
         }
 
-        // Save trial and set alarm
         buttonSetReminder.setOnClickListener {
             saveTrialAndSetAlarm()
         }
+    }
+
+    private val isEditMode: Boolean
+        get() = editingTrialId != NO_TRIAL_ID
+
+    private fun loadTrialForEdit(trialId: Int) {
+        lifecycleScope.launch {
+            val trial = withContext(Dispatchers.IO) {
+                database.trialDao().getById(trialId)
+            }
+            if (trial == null) {
+                Toast.makeText(this@AddTrialActivity, R.string.trial_not_found, Toast.LENGTH_SHORT).show()
+                finish()
+                return@launch
+            }
+            populateForm(trial)
+        }
+    }
+
+    private fun populateForm(trial: Trial) {
+        editTextName.setText(trial.name)
+        editTextDescription.setText(trial.description)
+        selectedDate = trial.endDate
+        calendar.timeInMillis = trial.endDate
+        buttonSelectDate.text = formatDateLabel(calendar)
+        spinnerReminderTime.setSelection(inferReminderOption(trial.endDate, trial.reminderTime))
     }
 
     private fun showDatePicker() {
         DatePickerDialog(
             this,
             { _, year, month, dayOfMonth ->
-                calendar.set(year, month, dayOfMonth, 0, 0, 0)
+                calendar.set(year, month, dayOfMonth, 9, 0, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
                 selectedDate = calendar.timeInMillis
-                buttonSelectDate.text = "$dayOfMonth/${month + 1}/$year"
+                buttonSelectDate.text = formatDateLabel(calendar)
             },
             calendar.get(Calendar.YEAR),
             calendar.get(Calendar.MONTH),
@@ -72,113 +115,120 @@ class AddTrialActivity : AppCompatActivity() {
         ).show()
     }
 
+    private fun formatDateLabel(calendar: Calendar): String {
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
+        val month = calendar.get(Calendar.MONTH) + 1
+        val year = calendar.get(Calendar.YEAR)
+        return "$day/$month/$year"
+    }
+
     private fun saveTrialAndSetAlarm() {
         val name = editTextName.text.toString().trim()
         val description = editTextDescription.text.toString().trim()
 
         if (name.isEmpty()) {
-            Toast.makeText(this, "Please enter a trial name", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.trial_name_required, Toast.LENGTH_SHORT).show()
             return
         }
 
         if (selectedDate == 0L) {
-            Toast.makeText(this, "Please select an end date", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.end_date_required, Toast.LENGTH_SHORT).show()
             return
         }
 
         val reminderOption = spinnerReminderTime.selectedItemPosition
         val reminderTime = calculateReminderTime(selectedDate, reminderOption)
 
-        val trial = Trial(
-            name = name,
-            description = description,
-            endDate = selectedDate,
-            reminderTime = reminderTime
-        )
+        if (reminderTime <= System.currentTimeMillis()) {
+            Toast.makeText(this, R.string.reminder_in_past, Toast.LENGTH_LONG).show()
+            return
+        }
 
-        CoroutineScope(Dispatchers.IO).launch {
-            database.trialDao().insert(trial)
-            
-            // Set alarm for this trial
-            setAlarm(this@AddTrialActivity, trial)
+        if (!AlarmScheduler.canScheduleExactAlarms(this)) {
+            promptExactAlarmPermission()
+            return
+        }
 
-            launch(Dispatchers.Main) {
-                Toast.makeText(this@AddTrialActivity, "Trial added and reminder set!", Toast.LENGTH_SHORT).show()
-                finish()
+        lifecycleScope.launch {
+            if (isEditMode) {
+                val trial = Trial(
+                    id = editingTrialId,
+                    name = name,
+                    description = description,
+                    endDate = selectedDate,
+                    reminderTime = reminderTime
+                )
+                withContext(Dispatchers.IO) {
+                    AlarmScheduler.cancel(this@AddTrialActivity, editingTrialId)
+                    database.trialDao().update(trial)
+                }
+                AlarmScheduler.schedule(this@AddTrialActivity, trial)
+                Toast.makeText(this@AddTrialActivity, R.string.trial_updated, Toast.LENGTH_SHORT).show()
+            } else {
+                val trial = Trial(
+                    name = name,
+                    description = description,
+                    endDate = selectedDate,
+                    reminderTime = reminderTime
+                )
+                val insertedId = withContext(Dispatchers.IO) {
+                    database.trialDao().insert(trial)
+                }
+                AlarmScheduler.schedule(this@AddTrialActivity, trial.copy(id = insertedId.toInt()))
+                Toast.makeText(this@AddTrialActivity, R.string.trial_added, Toast.LENGTH_SHORT).show()
             }
+            finish()
         }
     }
 
+    private fun promptExactAlarmPermission() {
+        AlertDialog.Builder(this)
+            .setMessage(R.string.exact_alarm_denied)
+            .setPositiveButton(R.string.exact_alarm_open_settings) { _, _ ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun calculateReminderTime(endDate: Long, option: Int): Long {
-        val calendar = Calendar.getInstance()
-        calendar.timeInMillis = endDate
-        
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = endDate
+
         return when (option) {
-            0 -> { // 1 day before
-                calendar.add(Calendar.DAY_OF_YEAR, -1)
-                calendar.timeInMillis
+            0 -> {
+                cal.add(Calendar.DAY_OF_YEAR, -1)
+                cal.timeInMillis
             }
-            1 -> { // 3 days before
-                calendar.add(Calendar.DAY_OF_YEAR, -3)
-                calendar.timeInMillis
+            1 -> {
+                cal.add(Calendar.DAY_OF_YEAR, -3)
+                cal.timeInMillis
             }
-            2 -> { // 7 days before
-                calendar.add(Calendar.DAY_OF_YEAR, -7)
-                calendar.timeInMillis
-            }
-            3 -> { // On the day
-                endDate
+            2 -> {
+                cal.add(Calendar.DAY_OF_YEAR, -7)
+                cal.timeInMillis
             }
             else -> endDate
         }
     }
 
     companion object {
-        fun setAlarm(context: Context, trial: Trial) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, AlarmReceiver::class.java).apply {
-                putExtra("trial_id", trial.id)
-                putExtra("trial_name", trial.name)
-                putExtra("trial_description", trial.description)
-            }
+        const val EXTRA_TRIAL_ID = "extra_trial_id"
+        private const val NO_TRIAL_ID = -1
 
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                trial.id.toInt(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            // Schedule exact alarm
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        trial.reminderTime,
-                        pendingIntent
-                    )
-                }
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    trial.reminderTime,
-                    pendingIntent
-                )
-            }
-        }
-
-        fun cancelAlarm(context: Context, trialId: Int) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, AlarmReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                trialId,
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            pendingIntent?.let {
-                alarmManager.cancel(it)
-                it.cancel()
+        fun inferReminderOption(endDate: Long, reminderTime: Long): Int {
+            val dayDiff = TimeUnit.MILLISECONDS.toDays(endDate - reminderTime)
+            return when (dayDiff) {
+                1L -> 0
+                3L -> 1
+                7L -> 2
+                else -> 3
             }
         }
     }

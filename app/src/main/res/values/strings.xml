@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trial Reminder</string>
+    <string name="main_title">My Trial Reminders</string>
+    <string name="empty_trials">No trials yet.\nTap + to add your first reminder.</string>
+    <string name="add_new_trial">Add New Trial</string>
+    <string name="edit_trial">Edit Trial</string>
+    <string name="set_reminder">Set Reminder</string>
+    <string name="update_reminder">Update Reminder</string>
+    <string name="select_end_date">Select End Date</string>
+    <string name="add_trial_cd">Add new trial</string>
+    <string name="notification_permission_granted">Notification permission granted</string>
+    <string name="notification_permission_denied">Notification permission denied. Notifications won\'t work.</string>
+    <string name="notification_title">Trial Ending Soon!</string>
+    <string name="trial_name_required">Please enter a trial name</string>
+    <string name="end_date_required">Please select an end date</string>
+    <string name="reminder_in_past">Reminder time is in the past. Choose a later date or option.</string>
+    <string name="trial_added">Trial added and reminder set!</string>
+    <string name="trial_updated">Trial updated and reminder set!</string>
+    <string name="trial_not_found">Trial not found</string>
+    <string name="exact_alarm_denied">Exact alarms are disabled. Enable them in Settings so reminders can fire on time.</string>
+    <string name="exact_alarm_open_settings">Open Settings</string>
+    <string name="delete_trial_title">Delete Trial</string>
+    <string name="delete_trial_message">Are you sure you want to delete \'%1$s\'? This will also cancel the reminder.</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="ends_reminder_format">Ends: %1$s\nReminder: %2$s</string>
+    <string-array name="reminder_options">
+        <item>1 day before</item>
+        <item>3 days before</item>
+        <item>7 days before</item>
+        <item>On the day</item>
+    </string-array>
+</resources>

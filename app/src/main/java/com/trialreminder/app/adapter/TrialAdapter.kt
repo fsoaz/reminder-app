@@ -1,28 +1,39 @@
 package com.trialreminder.app.adapter
 
-import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
 import com.trialreminder.app.AddTrialActivity
+import com.trialreminder.app.AlarmScheduler
 import com.trialreminder.app.R
 import com.trialreminder.app.data.TrialDatabase
 import com.trialreminder.app.model.Trial
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class TrialAdapter(
-    private val trials: List<Trial>,
-    private val context: Context
+    private val context: android.content.Context,
+    private val onDataChanged: () -> Unit
 ) : RecyclerView.Adapter<TrialAdapter.TrialViewHolder>() {
+
+    private val trials = mutableListOf<Trial>()
+    private val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
+    fun submitList(newTrials: List<Trial>) {
+        trials.clear()
+        trials.addAll(newTrials)
+        notifyDataSetChanged()
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TrialViewHolder {
         val view = LayoutInflater.from(parent.context)
@@ -31,8 +42,7 @@ class TrialAdapter(
     }
 
     override fun onBindViewHolder(holder: TrialViewHolder, position: Int) {
-        val trial = trials[position]
-        holder.bind(trial)
+        holder.bind(trials[position])
     }
 
     override fun getItemCount(): Int = trials.size
@@ -47,36 +57,35 @@ class TrialAdapter(
         fun bind(trial: Trial) {
             textViewName.text = trial.name
             textViewDescription.text = trial.description
-            
-            val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-            val endDateString = dateFormat.format(Date(trial.endDate))
-            val reminderDateString = dateFormat.format(Date(trial.reminderTime))
-            textViewEndDate.text = "Ends: $endDateString\nReminder: $reminderDateString"
+            textViewDescription.visibility =
+                if (trial.description.isBlank()) View.GONE else View.VISIBLE
 
-            // Delete button click
+            textViewEndDate.text = context.getString(
+                R.string.ends_reminder_format,
+                dateFormat.format(Date(trial.endDate)),
+                dateFormat.format(Date(trial.reminderTime))
+            )
+
             buttonDelete.setOnClickListener {
                 showDeleteConfirmation(trial)
             }
 
-            // Edit button click - for now just show info
             buttonEdit.setOnClickListener {
-                // In a full implementation, you would open an edit activity
-                AlertDialog.Builder(context)
-                    .setTitle("Edit Trial")
-                    .setMessage("Edit functionality can be added here.")
-                    .setPositiveButton("OK", null)
-                    .show()
+                val intent = Intent(context, AddTrialActivity::class.java).apply {
+                    putExtra(AddTrialActivity.EXTRA_TRIAL_ID, trial.id)
+                }
+                context.startActivity(intent)
             }
         }
 
         private fun showDeleteConfirmation(trial: Trial) {
             AlertDialog.Builder(context)
-                .setTitle("Delete Trial")
-                .setMessage("Are you sure you want to delete '${trial.name}'? This will also cancel the reminder.")
-                .setPositiveButton("Delete") { _, _ ->
+                .setTitle(R.string.delete_trial_title)
+                .setMessage(context.getString(R.string.delete_trial_message, trial.name))
+                .setPositiveButton(R.string.delete) { _, _ ->
                     deleteTrial(trial)
                 }
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(R.string.cancel, null)
                 .show()
         }
 
@@ -84,9 +93,10 @@ class TrialAdapter(
             CoroutineScope(Dispatchers.IO).launch {
                 val database = TrialDatabase.getDatabase(context)
                 database.trialDao().delete(trial)
-                
-                // Cancel the alarm
-                AddTrialActivity.cancelAlarm(context, trial.id)
+                AlarmScheduler.cancel(context, trial.id)
+                withContext(Dispatchers.Main) {
+                    onDataChanged()
+                }
             }
         }
     }

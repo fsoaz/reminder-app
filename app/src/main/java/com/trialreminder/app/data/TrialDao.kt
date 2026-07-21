@@ -12,8 +12,11 @@ interface TrialDao {
     @Query("SELECT * FROM trials ORDER BY endDate ASC")
     suspend fun getAllTrialsList(): List<Trial>
 
+    @Query("SELECT * FROM trials WHERE id = :trialId LIMIT 1")
+    suspend fun getById(trialId: Int): Trial?
+
     @Insert
-    suspend fun insert(trial: Trial)
+    suspend fun insert(trial: Trial): Long
 
     @Update
     suspend fun update(trial: Trial)

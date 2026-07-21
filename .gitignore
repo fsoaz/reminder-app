@@ -26,6 +26,7 @@ venv/
 .env
 .env.local
 *.env.*
+local.properties
 
 # OS generated files
 .DS_Store
