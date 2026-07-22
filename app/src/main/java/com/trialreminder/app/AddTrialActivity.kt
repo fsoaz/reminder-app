@@ -21,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import java.util.concurrent.TimeUnit
 
 class AddTrialActivity : AppCompatActivity() {
 
@@ -162,8 +161,11 @@ class AddTrialActivity : AppCompatActivity() {
                     AlarmScheduler.cancel(this@AddTrialActivity, editingTrialId)
                     database.trialDao().update(trial)
                 }
-                AlarmScheduler.schedule(this@AddTrialActivity, trial)
+                val scheduled = AlarmScheduler.schedule(this@AddTrialActivity, trial)
                 Toast.makeText(this@AddTrialActivity, R.string.trial_updated, Toast.LENGTH_SHORT).show()
+                if (!scheduled) {
+                    Toast.makeText(this@AddTrialActivity, R.string.exact_alarm_denied, Toast.LENGTH_LONG).show()
+                }
             } else {
                 val trial = Trial(
                     name = name,
@@ -174,8 +176,11 @@ class AddTrialActivity : AppCompatActivity() {
                 val insertedId = withContext(Dispatchers.IO) {
                     database.trialDao().insert(trial)
                 }
-                AlarmScheduler.schedule(this@AddTrialActivity, trial.copy(id = insertedId.toInt()))
+                val scheduled = AlarmScheduler.schedule(this@AddTrialActivity, trial.copy(id = insertedId.toInt()))
                 Toast.makeText(this@AddTrialActivity, R.string.trial_added, Toast.LENGTH_SHORT).show()
+                if (!scheduled) {
+                    Toast.makeText(this@AddTrialActivity, R.string.exact_alarm_denied, Toast.LENGTH_LONG).show()
+                }
             }
             finish()
         }
@@ -197,38 +202,37 @@ class AddTrialActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun calculateReminderTime(endDate: Long, option: Int): Long {
-        val cal = Calendar.getInstance()
-        cal.timeInMillis = endDate
-
-        return when (option) {
-            0 -> {
-                cal.add(Calendar.DAY_OF_YEAR, -1)
-                cal.timeInMillis
-            }
-            1 -> {
-                cal.add(Calendar.DAY_OF_YEAR, -3)
-                cal.timeInMillis
-            }
-            2 -> {
-                cal.add(Calendar.DAY_OF_YEAR, -7)
-                cal.timeInMillis
-            }
-            else -> endDate
-        }
-    }
-
     companion object {
         const val EXTRA_TRIAL_ID = "extra_trial_id"
         private const val NO_TRIAL_ID = -1
 
         fun inferReminderOption(endDate: Long, reminderTime: Long): Int {
-            val dayDiff = TimeUnit.MILLISECONDS.toDays(endDate - reminderTime)
-            return when (dayDiff) {
-                1L -> 0
-                3L -> 1
-                7L -> 2
-                else -> 3
+            for (option in 0..2) {
+                if (calculateReminderTime(endDate, option) == reminderTime) {
+                    return option
+                }
+            }
+            return 3
+        }
+
+        private fun calculateReminderTime(endDate: Long, option: Int): Long {
+            val cal = Calendar.getInstance()
+            cal.timeInMillis = endDate
+
+            return when (option) {
+                0 -> {
+                    cal.add(Calendar.DAY_OF_YEAR, -1)
+                    cal.timeInMillis
+                }
+                1 -> {
+                    cal.add(Calendar.DAY_OF_YEAR, -3)
+                    cal.timeInMillis
+                }
+                2 -> {
+                    cal.add(Calendar.DAY_OF_YEAR, -7)
+                    cal.timeInMillis
+                }
+                else -> endDate
             }
         }
     }

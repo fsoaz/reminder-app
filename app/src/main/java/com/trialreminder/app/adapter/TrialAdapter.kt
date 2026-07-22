@@ -7,13 +7,13 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.RecyclerView
 import com.trialreminder.app.AddTrialActivity
 import com.trialreminder.app.AlarmScheduler
 import com.trialreminder.app.R
 import com.trialreminder.app.data.TrialDatabase
 import com.trialreminder.app.model.Trial
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,6 +23,7 @@ import java.util.Locale
 
 class TrialAdapter(
     private val context: android.content.Context,
+    private val lifecycleScope: LifecycleCoroutineScope,
     private val onDataChanged: () -> Unit
 ) : RecyclerView.Adapter<TrialAdapter.TrialViewHolder>() {
 
@@ -90,7 +91,7 @@ class TrialAdapter(
         }
 
         private fun deleteTrial(trial: Trial) {
-            CoroutineScope(Dispatchers.IO).launch {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val database = TrialDatabase.getDatabase(context)
                 database.trialDao().delete(trial)
                 AlarmScheduler.cancel(context, trial.id)

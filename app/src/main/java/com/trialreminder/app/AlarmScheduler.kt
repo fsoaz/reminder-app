@@ -26,18 +26,16 @@ object AlarmScheduler {
             putExtra("trial_description", trial.description)
         }
 
+        if (!canScheduleExactAlarms(context)) {
+            return false
+        }
+
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             trial.id,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!alarmManager.canScheduleExactAlarms()) {
-                return false
-            }
-        }
 
         alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
@@ -70,12 +68,20 @@ object AlarmScheduler {
         return alarmManager.canScheduleExactAlarms()
     }
 
-    suspend fun rescheduleFutureAlarms(context: Context) {
+    /**
+     * @return true if alarms were (re)scheduled, false if exact-alarm permission is missing.
+     */
+    suspend fun rescheduleFutureAlarms(context: Context): Boolean {
         if (!canScheduleExactAlarms(context)) {
-            return
+            return false
         }
         val database = TrialDatabase.getDatabase(context)
         val trials = database.trialDao().getAllTrialsList()
+        rescheduleFutureAlarms(context, trials)
+        return true
+    }
+
+    fun rescheduleFutureAlarms(context: Context, trials: List<Trial>) {
         val now = System.currentTimeMillis()
         for (trial in trials) {
             if (trial.reminderTime > now) {

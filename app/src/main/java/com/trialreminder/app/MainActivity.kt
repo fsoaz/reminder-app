@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerView)
         emptyView = findViewById(R.id.textViewEmpty)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        adapter = TrialAdapter(this) { loadTrials() }
+        adapter = TrialAdapter(this, lifecycleScope) { loadTrials() }
         recyclerView.adapter = adapter
 
         val fab: FloatingActionButton = findViewById(R.id.fabAddTrial)
@@ -62,9 +62,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadTrials()
-        lifecycleScope.launch(Dispatchers.IO) {
-            AlarmScheduler.rescheduleFutureAlarms(this@MainActivity)
-        }
     }
 
     private fun loadTrials() {
@@ -76,6 +73,18 @@ class MainActivity : AppCompatActivity() {
             val isEmpty = trials.isEmpty()
             emptyView.visibility = if (isEmpty) View.VISIBLE else View.GONE
             recyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+
+            if (AlarmScheduler.canScheduleExactAlarms(this@MainActivity)) {
+                withContext(Dispatchers.IO) {
+                    AlarmScheduler.rescheduleFutureAlarms(this@MainActivity, trials)
+                }
+            } else {
+                Toast.makeText(
+                    this@MainActivity,
+                    R.string.exact_alarm_denied,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
