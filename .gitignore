@@ -28,6 +28,9 @@ venv/
 *.env.*
 local.properties
 
+# Documentation (generated, not tracked)
+docs/
+
 # OS generated files
 .DS_Store
 Thumbs.db
